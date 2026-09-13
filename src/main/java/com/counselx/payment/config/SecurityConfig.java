@@ -2,6 +2,7 @@ package com.counselx.payment.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
@@ -13,58 +14,69 @@ import java.util.List;
 @Configuration
 public class SecurityConfig {
 
- @Bean
- public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
-  http
-          .csrf(csrf -> csrf.disable())
+        http
+                .csrf(csrf -> csrf.disable())
 
-          // IMPORTANT
-          .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
-          .authorizeHttpRequests(auth -> auth
-                  .requestMatchers(
-                          "/actuator/health",
-                          "/api/payments/webhooks/cashfree"
-                  ).permitAll()
+                .authorizeHttpRequests(auth -> auth
 
-                  // temporary testing
-                  .anyRequest().permitAll()
-          )
+                        // CORS preflight request
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-          .formLogin(form -> form.disable())
-          .httpBasic(basic -> basic.disable());
+                        .requestMatchers(
+                                "/actuator/health",
+                                "/api/payments/webhooks/cashfree"
+                        ).permitAll()
 
-  return http.build();
- }
+                        // temporary testing
+                        .anyRequest().permitAll()
+                )
 
- @Bean
- public CorsConfigurationSource corsConfigurationSource() {
+                .formLogin(form -> form.disable())
+                .httpBasic(basic -> basic.disable());
 
-  CorsConfiguration configuration = new CorsConfiguration();
+        return http.build();
+    }
 
-  configuration.setAllowedOrigins(List.of(
-          "http://localhost:5500",
-          "http://127.0.0.1:5500"
-  ));
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
 
-  configuration.setAllowedMethods(List.of(
-          "GET",
-          "POST",
-          "PUT",
-          "DELETE",
-          "OPTIONS"
-  ));
+        CorsConfiguration configuration = new CorsConfiguration();
 
-  configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowedOrigins(List.of(
+                // Live frontend
+                "https://web.nexorachat.online",
 
-  configuration.setAllowCredentials(false);
+                // Local Vite
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
 
-  UrlBasedCorsConfigurationSource source =
-          new UrlBasedCorsConfigurationSource();
+                // Old/local Live Server
+                "http://localhost:5500",
+                "http://127.0.0.1:5500"
+        ));
 
-  source.registerCorsConfiguration("/**", configuration);
+        configuration.setAllowedMethods(List.of(
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE",
+                "OPTIONS"
+        ));
 
-  return source;
- }
+        configuration.setAllowedHeaders(List.of("*"));
+
+        configuration.setAllowCredentials(false);
+
+        UrlBasedCorsConfigurationSource source =
+                new UrlBasedCorsConfigurationSource();
+
+        source.registerCorsConfiguration("/**", configuration);
+
+        return source;
+    }
 }
