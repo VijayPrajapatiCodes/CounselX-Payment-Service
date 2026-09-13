@@ -9,6 +9,9 @@ pipeline {
         // =========================
         AWS_REGION = 'ap-south-1'
 
+        ECR_REGISTRY =
+            '196893792695.dkr.ecr.ap-south-1.amazonaws.com'
+
         ECR_REPOSITORY =
             '196893792695.dkr.ecr.ap-south-1.amazonaws.com/counselx/payment-service'
 
@@ -30,13 +33,28 @@ pipeline {
     stages {
 
         // ==========================================
-        // 1. Checkout
+        // 1. Verify Environment
         // ==========================================
-        stage('Checkout') {
+        stage('Verify Environment') {
             steps {
-                echo 'Checking out source code...'
+                echo 'Checking Jenkins environment...'
 
-                checkout scm
+                sh '''
+                    echo "Java:"
+                    java -version
+
+                    echo ""
+                    echo "Maven:"
+                    mvn -version
+
+                    echo ""
+                    echo "Docker:"
+                    docker --version
+
+                    echo ""
+                    echo "AWS CLI:"
+                    aws --version
+                '''
             }
         }
 
@@ -48,8 +66,7 @@ pipeline {
                 echo 'Building Spring Boot application...'
 
                 sh '''
-                    chmod +x mvnw
-                    ./mvnw clean package -DskipTests
+                    mvn clean package -DskipTests
                 '''
             }
         }
@@ -62,18 +79,17 @@ pipeline {
                 echo 'Building OCI image using Spring Boot Buildpacks...'
 
                 sh """
-                    ./mvnw spring-boot:build-image \
+                    mvn spring-boot:build-image \
                     -Dspring-boot.build-image.imageName=${ECR_REPOSITORY}:${IMAGE_TAG}
                 """
             }
         }
 
         // ==========================================
-        // 4. Login to ECR
+        // 4. Login to AWS ECR
         // ==========================================
         stage('Login to ECR') {
             steps {
-
                 echo 'Logging in to AWS ECR...'
 
                 sh """
@@ -82,7 +98,7 @@ pipeline {
                     | docker login \
                     --username AWS \
                     --password-stdin \
-                    ${ECR_REPOSITORY.split('/')[0]}
+                    ${ECR_REGISTRY}
                 """
             }
         }
@@ -93,19 +109,21 @@ pipeline {
         stage('Push Image to ECR') {
             steps {
 
-                echo "Pushing image ${IMAGE_TAG} to ECR..."
+                echo "Pushing image: ${ECR_REPOSITORY}:${IMAGE_TAG}"
 
                 sh """
                     docker push ${ECR_REPOSITORY}:${IMAGE_TAG}
                 """
 
-                echo "Updating latest tag..."
+                echo 'Updating latest tag...'
 
                 sh """
                     docker tag \
                     ${ECR_REPOSITORY}:${IMAGE_TAG} \
                     ${ECR_REPOSITORY}:latest
+                """
 
+                sh """
                     docker push \
                     ${ECR_REPOSITORY}:latest
                 """
@@ -124,12 +142,12 @@ pipeline {
 
                     sh """
                         ssh -o StrictHostKeyChecking=no \
-                        ${EC2_USER}@${EC2_HOST} '
+                        ${EC2_USER}@${EC2_HOST} << 'REMOTE_COMMANDS'
 
                             set -e
 
                             echo "================================="
-                            echo "Logging in to AWS ECR"
+                            echo "AWS ECR LOGIN"
                             echo "================================="
 
                             aws ecr get-login-password \
@@ -137,11 +155,11 @@ pipeline {
                             | docker login \
                             --username AWS \
                             --password-stdin \
-                            ${ECR_REPOSITORY.split('/')[0]}
+                            ${ECR_REGISTRY}
 
 
                             echo "================================="
-                            echo "Pulling new image"
+                            echo "PULLING NEW IMAGE"
                             echo "================================="
 
                             docker pull \
@@ -149,21 +167,21 @@ pipeline {
 
 
                             echo "================================="
-                            echo "Stopping old container"
+                            echo "STOPPING OLD CONTAINER"
                             echo "================================="
 
                             docker stop ${CONTAINER_NAME} || true
 
 
                             echo "================================="
-                            echo "Removing old container"
+                            echo "REMOVING OLD CONTAINER"
                             echo "================================="
 
                             docker rm ${CONTAINER_NAME} || true
 
 
                             echo "================================="
-                            echo "Starting new container"
+                            echo "STARTING NEW CONTAINER"
                             echo "================================="
 
                             docker run -d \
@@ -174,12 +192,18 @@ pipeline {
 
 
                             echo "================================="
-                            echo "Deployment completed"
+                            echo "CONTAINER STATUS"
                             echo "================================="
 
                             docker ps \
-                            --filter name=${CONTAINER_NAME}
-                        '
+                            --filter "name=${CONTAINER_NAME}"
+
+
+                            echo "================================="
+                            echo "DEPLOYMENT COMPLETED"
+                            echo "================================="
+
+REMOTE_COMMANDS
                     """
                 }
             }
@@ -208,8 +232,10 @@ pipeline {
         }
 
         always {
-            echo "Jenkins Build: ${BUILD_NUMBER}"
-            echo "ECR Image: ${ECR_REPOSITORY}:${IMAGE_TAG}"
+            echo "========================================="
+            echo "Jenkins Build : ${BUILD_NUMBER}"
+            echo "ECR Image     : ${ECR_REPOSITORY}:${IMAGE_TAG}"
+            echo "========================================="
         }
     }
 }
